@@ -1,0 +1,1 @@
+"""CommitGuard core package."""

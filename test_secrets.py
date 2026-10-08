@@ -1,1 +1,0 @@
-﻿OPENAI_KEY = "sk-proj-a9823mKx9910LzqpQmZ8129031zLa"
