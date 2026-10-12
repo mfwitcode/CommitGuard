@@ -9,6 +9,4 @@ what have i learned from this project will be mention in this file.
 ## Bug 2: mask_snippet reveals too much
 - mask snippet show the first 4 and last 4 characters of the snippet , with short words it will show to much and its gonna be predictable
 - so i changed it to show the first 20% and last 20% of the snippet
-- mask snippet แสดงข้อมูลมากเกินไปทำให้สามารถเดาข้อมูลได้ง่ายแก้ไขโดยแก้แสดงเพียง 20% ของข้อมูล
-## Bug 3: 
-- 
+- mask snippet แสดงข้อมูลมากเกินไปทำให้สามารถเดาข้อมูลได้ง่ายแก้ไขโดยแสดงเพียง 20% ของข้อมูล

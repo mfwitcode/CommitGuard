@@ -34,13 +34,13 @@ def print_banner() -> None:
 
 
 def mask_snippet(snippet: str) -> str:
-    visible = len(snippet) // 5
-    side = visible // 2
     """Mask sensitive tokens partially to prevent credential exposure in logs.
     
     Shows about 20% of the characters, split between start and end.
     Very short values are fully hidden
     """
+    visible = len(snippet) // 5
+    side = visible // 2
     if side == 0:
         return "****"
     return f"{snippet[:side]}...{snippet[-side:]}"
