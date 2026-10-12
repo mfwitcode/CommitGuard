@@ -10,3 +10,7 @@ what have i learned from this project will be mention in this file.
 - mask snippet show the first 4 and last 4 characters of the snippet , with short words it will show to much and its gonna be predictable
 - so i changed it to show the first 20% and last 20% of the snippet
 - mask snippet แสดงข้อมูลมากเกินไปทำให้สามารถเดาข้อมูลได้ง่ายแก้ไขโดยแสดงเพียง 20% ของข้อมูล
+## Bug 3: hook not detected commitguard.py in hook
+- hook found no commitguard.py in a folder that being commit
+- so we find where do commitguard.py really lives and write the full address into the script
+- hook หา commitguard.py ในโฟลเดอร์ที่กำลังถูก commit ไม่เจอแก้โดยการหา absolute path ของ commitguard.py ตั้งแต่ตอนติดตั้งและเขียนลงไปในไฟล์ hook

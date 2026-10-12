@@ -146,6 +146,24 @@ def run() -> int:
     )
     return 1
 
+def build_hook_script(commitguard_path: str) -> str:
+    """Return the text of the pre-commit hook for the given commitguard.py path."""
+    path = commitguard_path.replace("\\", "/")
+    return f"""#!/bin/sh
+# CommitGuard - Pre-commit Hook for DevSecOps Secret & PII Scanning
+# Automatically installed by `python commitguard.py --install`
+
+if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+else
+    echo "[CommitGuard] Error: Python executable not found in PATH." >&2
+    exit 1
+fi
+
+exec "$PYTHON_BIN" "{path}" "$@"
+"""
 
 def install_hook() -> int:
     """Install CommitGuard as a Git pre-commit hook in .git/hooks/pre-commit.
@@ -180,24 +198,10 @@ def install_hook() -> int:
     os.makedirs(hooks_dir, exist_ok=True)
     hook_path = os.path.join(hooks_dir, "pre-commit")
 
-    hook_script_content = """#!/bin/sh
-# CommitGuard - Pre-commit Hook for DevSecOps Secret & PII Scanning
-# Automatically installed by `python commitguard.py --install`
-
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-
-# Detect python executable
-if command -v python3 >/dev/null 2>&1; then
-    PYTHON_BIN="python3"
-elif command -v python >/dev/null 2>&1; then
-    PYTHON_BIN="python"
-else
-    echo "[CommitGuard] Error: Python executable not found in PATH." >&2
-    exit 1
-fi
-
-exec "$PYTHON_BIN" "$REPO_ROOT/commitguard.py" "$@"
-"""
+    commitguard_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "commitguard.py"
+    )
+    hook_script_content = build_hook_script(commitguard_path)
 
     try:
         with open(hook_path, "w", encoding="utf-8", newline="\n") as f:

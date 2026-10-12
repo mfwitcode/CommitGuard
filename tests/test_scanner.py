@@ -102,6 +102,14 @@ class TestScanner(unittest.TestCase):
 class TestCli(unittest.TestCase):
     """Test suite for CLI display and prompt workflows."""
 
+    def test_build_hook_script_uses_absolute_path(self) -> None:
+        from src.cli import build_hook_script
+
+        path = "D:/Tools/CommitGuard/commitguard.py"
+        script = build_hook_script(path)
+        self.assertIn(path, script)
+        self.assertNotIn("$REPO_ROOT", script)
+
     @patch("builtins.open", mock_open(read_data=""))
     def test_prompt_user_tty_eof_returns_abort(self) -> None:
         from src.cli import prompt_user_tty
