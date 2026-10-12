@@ -89,16 +89,20 @@ def prompt_user_tty() -> str:
                 sys.stdout.write(f"{COLOR_BOLD}Select action [A/B]: {COLOR_RESET}")
                 sys.stdout.flush()
 
-                choice = tty.readline().strip().upper()
+                line = tty.readline()
+                if line == "":
+                    sys.stdout.write(f"\n{COLOR_YELLOW}[CommitGuard Warning]{COLOR_RESET} EOF detected. Defaulting to Abort.\n")
+                    return "A"
+                choice = line.strip().upper()
                 if choice in ("A", "B"):
                     return choice
-                sys.stdout.write(f"{COLOR_YELLOW}Invalid option '{choice}'. Please type A or B.{COLOR_RESET}\n")
+                sys.stdout.write(f"{COLOR_YELLOW}Invalid option '{choice}'. Please type A or B.\n")
     except Exception as e:
         # If TTY cannot be opened (e.g. non-interactive CI/CD), fail-safe by aborting
         sys.stderr.write(
             f"\n{COLOR_RED}Could not access TTY: {e}. Aborting commit for safety.{COLOR_RESET}\n"
         )
-        return "A"
+        return "A" 
 
 
 def run() -> int:

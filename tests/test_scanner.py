@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 from unittest.mock import MagicMock, patch
+from unittest.mock import mock_open
 
 from src.cli import mask_snippet, run
 from src.scanner import (
@@ -101,6 +102,13 @@ class TestScanner(unittest.TestCase):
 class TestCli(unittest.TestCase):
     """Test suite for CLI display and prompt workflows."""
 
+    @patch("builtins.open", mock_open(read_data=""))
+    def test_prompt_user_tty_eof_returns_abort(self) -> None:
+        from src.cli import prompt_user_tty
+        result = prompt_user_tty()
+        
+        self.assertEqual(result, "A")
+
     def test_mask_snippet(self) -> None:
         self.assertEqual(mask_snippet("short"), "****")
         self.assertEqual(mask_snippet("AKIAIOSFODNN7EXAMPLE"), "AKIA...MPLE")
@@ -181,6 +189,7 @@ class TestCli(unittest.TestCase):
         args_default = parser.parse_args([])
         self.assertFalse(args_default.install)
         self.assertFalse(args_default.scan)
+
 
 
 if __name__ == "__main__":
