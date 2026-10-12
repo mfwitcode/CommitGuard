@@ -110,8 +110,9 @@ class TestCli(unittest.TestCase):
         self.assertEqual(result, "A")
 
     def test_mask_snippet(self) -> None:
+        self.assertEqual(mask_snippet("1234567890123"),"1...3")
         self.assertEqual(mask_snippet("short"), "****")
-        self.assertEqual(mask_snippet("AKIAIOSFODNN7EXAMPLE"), "AKIA...MPLE")
+        self.assertEqual(mask_snippet("AKIAIOSFODNN7EXAMPLE"), "AK...LE")
 
     @patch("src.cli.scan_staged_changes")
     def test_run_clean_diff_returns_zero(self, mock_scan: MagicMock) -> None:
