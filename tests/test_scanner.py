@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 from unittest.mock import mock_open
@@ -175,12 +177,56 @@ class TestCli(unittest.TestCase):
         self.assertEqual(exit_code, 1)
 
     @patch("subprocess.run")
+    def test_install_refuses_foreign_hook(self, mock_subproc: MagicMock) -> None:
+        from src.cli import install_hook
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # SET UP: a fake .git folder with someone else's hook inside
+            git_dir = os.path.join(tmp, ".git")
+            os.makedirs(os.path.join(git_dir, "hooks"))
+            hook_path = os.path.join(git_dir, "hooks", "pre-commit")
+            with open(hook_path, "w", encoding="utf-8") as f:
+                f.write("echo my own hook\n")
+
+            # The fake git answers: "the .git folder is here"
+            mock_subproc.return_value = MagicMock(returncode=0, stdout=git_dir)
+
+            # DO
+            exit_code = install_hook()
+
+            # CHECK
+            self.assertEqual(exit_code, 1)
+            with open(hook_path, "r", encoding="utf-8") as f:
+                self.assertEqual(f.read(), "echo my own hook\n")
+
+    @patch("subprocess.run")
     def test_uninstall_hook_outside_git_fails(self, mock_subproc: MagicMock) -> None:
         from src.cli import uninstall_hook
 
         mock_subproc.return_value = MagicMock(returncode=1, stderr="fatal: not a git repo")
         exit_code = uninstall_hook()
         self.assertEqual(exit_code, 1)
+
+    @patch("subprocess.run")
+    def test_uninstall_keeps_foreign_hook(self, mock_subproc: MagicMock) -> None:
+        from src.cli import uninstall_hook
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # SET UP: a fake .git folder with someone else's hook
+            git_dir = os.path.join(tmp, ".git")
+            os.makedirs(os.path.join(git_dir, "hooks"))
+            hook_path = os.path.join(git_dir, "hooks", "pre-commit")
+            with open(hook_path, "w", encoding="utf-8") as f:
+                f.write("echo my own hook\n")
+
+            mock_subproc.return_value = MagicMock(returncode=0, stdout=git_dir)
+
+            # DO
+            exit_code = uninstall_hook()
+
+            # CHECK
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(os.path.exists(hook_path), True)
 
     def test_argument_parser(self) -> None:
         from commitguard import create_parser
@@ -198,8 +244,6 @@ class TestCli(unittest.TestCase):
         args_default = parser.parse_args([])
         self.assertFalse(args_default.install)
         self.assertFalse(args_default.scan)
-
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -146,10 +146,22 @@ def run() -> int:
     )
     return 1
 
+HOOK_MARKER = "# CommitGuard-Hook"
+
+
+def is_commitguard_hook(hook_path: str) -> bool:
+    """Return True if the file at hook_path was written by CommitGuard."""
+    try:
+        with open(hook_path, "r", encoding="utf-8", errors="replace") as f:
+            return HOOK_MARKER in f.read()
+    except OSError:
+        return False
+
 def build_hook_script(commitguard_path: str) -> str:
     """Return the text of the pre-commit hook for the given commitguard.py path."""
     path = commitguard_path.replace("\\", "/")
     return f"""#!/bin/sh
+{HOOK_MARKER}
 # CommitGuard - Pre-commit Hook for DevSecOps Secret & PII Scanning
 # Automatically installed by `python commitguard.py --install`
 
@@ -197,6 +209,13 @@ def install_hook() -> int:
     hooks_dir = os.path.join(git_dir, "hooks")
     os.makedirs(hooks_dir, exist_ok=True)
     hook_path = os.path.join(hooks_dir, "pre-commit")
+
+    if os.path.exists(hook_path) and not is_commitguard_hook(hook_path):
+        sys.stderr.write(
+            f"\n{COLOR_RED}[Error]{COLOR_RESET} A pre-commit hook already exists at {hook_path} "
+            f"and was not written by CommitGuard. Not touching it.\n\n"
+        )
+        return 1
 
     commitguard_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "commitguard.py"
@@ -252,6 +271,12 @@ def uninstall_hook() -> int:
 
     hook_path = os.path.join(git_dir, "hooks", "pre-commit")
     if os.path.exists(hook_path):
+        if not is_commitguard_hook(hook_path):
+            sys.stderr.write(
+                f"\n{COLOR_RED}[Error]{COLOR_RESET} The pre-commit hook at {hook_path} "
+                f"was not written by CommitGuard. Not removing it.\n\n"
+            )
+            return 1
         try:
             os.remove(hook_path)
             sys.stdout.write(
