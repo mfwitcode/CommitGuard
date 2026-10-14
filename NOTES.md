@@ -15,7 +15,13 @@ what have i learned from this project will be mention in this file.
 - so we find where do commitguard.py really lives and write the full address into the script
 - hook หา commitguard.py ในโฟลเดอร์ที่กำลังถูก commit ไม่เจอแก้โดยการหา absolute path ของ commitguard.py ตั้งแต่ตอนติดตั้งและเขียนลงไปในไฟล์ hook
 ## Issue 4: install replaces pre-commit hook and uninstall deletes hook without user notice
--install replaced any existing pre-commit hook and uninstall deleted it, so a user hook could be lost without notice. 
+- install replaced any existing pre-commit hook and uninstall deleted it, so a user hook could be lost without notice. 
 -Now the hook has a marker comment and both commands refuse to touch a hook without it
--การ install แทนที่ไฟล์ pre-commit ที่มีอยู่แล้วและ uninstall ลบ hook ที่มีอยู้แล้วแม้ว่ามันไม่ใช่ไฟล์ที่ commit guard สร้างขึ้น
--แก้ใส่การ marker ลงไปใน hook uninstall จะได้เช็คว่าสร้างโดย CommitGuard ไหม
+- การ install แทนที่ไฟล์ pre-commit ที่มีอยู่แล้วและ uninstall ลบ hook ที่มีอยู้แล้วแม้ว่ามันไม่ใช่ไฟล์ที่ commit guard สร้างขึ้น
+- แก้ใส่การ marker ลงไปใน hook uninstall จะได้เช็คว่าสร้างโดย CommitGuard ไหม
+## Issue 5: install scripts only work inside CommitGuard's own folder
+- install.bat/install.sh called commitguard.py with a relative path, so Python looked inside the folder that called it
+- I fixed it with %~dp0 in install.bat and dirname "$0" in install.sh
+- I tested only with install.bat because I don't have linux so install.sh is unverified
+- install.bat/install.sh เรี่ยกใช้ commitguard.py ด้วย relative path ทำให้ Python หาในโฟลเดอร์ที่เรียกใช้ทำให้หา commitguard ไม่เจอ
+- แก้โดยการ ใช้ %~dp0 ใน install.bat เพื่อให้ installer ทำงานได้จากทุกโฟลเดอร์

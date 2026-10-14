@@ -41,7 +41,8 @@ if [ ! -d ".git" ] && ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; the
     fi
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Run CommitGuard installation command
-$PYTHON_EXEC commitguard.py --install
+$PYTHON_EXEC "$SCRIPT_DIR/commitguard.py" --install
 
 echo -e "${GREEN}CommitGuard has been successfully installed as your Git Pre-commit hook!${RESET}"

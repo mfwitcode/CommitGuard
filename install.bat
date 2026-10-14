@@ -11,20 +11,20 @@ echo ====================================================
 echo.
 
 REM Check if Python is installed
-where python >nul 2>&1
-if %ERRORLEVEL% neq 0 (
-    where py >nul 2>&1
-    if %ERRORLEVEL% neq 0 (
+where py >nul 2>&1
+if %ERRORLEVEL% equ 0 (
+    set PYTHON_CMD=py
+) else (
+    where python >nul 2>&1
+    if !ERRORLEVEL! neq 0 (
         echo [ERROR] Python is not found in your system PATH.
         echo Please install Python 3.8+ and ensure "Add Python to PATH" is checked.
         echo.
         pause
         exit /b 1
     ) else (
-        set PYTHON_CMD=py
+        set PYTHON_CMD=python
     )
-) else (
-    set PYTHON_CMD=python
 )
 
 echo Detected Python:
@@ -51,7 +51,7 @@ if not exist ".git" (
 )
 
 REM Run CommitGuard --install
-%PYTHON_CMD% commitguard.py --install
+%PYTHON_CMD% "%~dp0commitguard.py" --install
 if %ERRORLEVEL% neq 0 (
     echo.
     echo [ERROR] CommitGuard installation failed.
