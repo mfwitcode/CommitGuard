@@ -38,7 +38,6 @@ CommitGuard is a **pre-commit hook**. A hook is a small program that Git runs au
 | Random-looking strings | `wJalrXUtnFEMI/K7...` | Shannon entropy (see below) |
 
 ## How it works
----
 
 ```mermaid
 flowchart TD
@@ -120,7 +119,6 @@ This only checks the math. It cannot know if the person really exists. By chance
 </details>
 
 ## Install
----
 
 You install CommitGuard **into the repository you want to protect**. Run the installer while your terminal is inside that repository.
 
@@ -152,7 +150,6 @@ What the installer does:
 - It adds a marker comment `# CommitGuard-Hook` to the file. If you already have a pre-commit hook that CommitGuard did not write, `--install` and `--uninstall` refuse to touch it.
 
 ## Use
----
 
 After you install, use Git as usual:
 
@@ -184,7 +181,6 @@ Select action [A/B]:
 - If you press Ctrl-D (end of input), CommitGuard treats it as `A`.
 
 ### Commands
----
 
 | Command | What it does |
 |---------|--------------|
@@ -194,7 +190,6 @@ Select action [A/B]:
 | `python commitguard.py --help` | Shows help |
 
 ## Project structure
----
 
 ```text
 CommitGuard/
@@ -214,7 +209,6 @@ CommitGuard/
 ```
 
 ## Tests
----
 
 ```powershell
 cd path\to\CommitGuard
@@ -224,7 +218,6 @@ python -m unittest discover -s tests -v
 There are **31 tests**. They cover entropy, the Thai ID check, the phone / key / token patterns, the diff parser, masking, the A and B choices, and the install / uninstall rules (including "do not touch a hook that is not ours").
 
 ## Known limits
----
 
 CommitGuard is not finished. This list is honest. I am fixing these one by one (see [ROADMAP.md](ROADMAP.md)).
 
