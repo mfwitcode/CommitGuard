@@ -1,203 +1,257 @@
-# CommitGuard 🛡️
+<div align="center">
 
-**DevSecOps Git Pre-commit Secret & PII Shield**
+# CommitGuard
 
-CommitGuard คือเครื่องมือ Git Pre-commit Hook CLI น้ำหนักเบาสำหรับสกัดจับข้อมูลส่วนบุคคล (PII เช่น เลขประจำตัวประชาชนไทย, เบอร์โทรศัพท์) และ High-Entropy Secrets (API Keys, Private Keys) จาก `git diff --cached` ก่อนที่นักพัฒนาจะ Commit โค้ดเข้าสู่ Repository
+**Stops you from committing passwords, API keys, and Thai ID numbers by mistake.**
 
-> **Zero Third-Party Dependencies:** พัฒนาด้วยภาษา **Python Standard Library 100%** ไม่ต้องติดตั้งไลบรารีภายนอก ไม่ต้องรัน `pip install` สามารถทำงานได้ทันทีบนทุกเครื่อง (Cross-Platform: Windows, Linux, macOS)
+A small tool for Git. It checks the lines you are about to commit, and warns you before a secret leaves your computer.
 
----
+[What it finds](#what-it-finds) &bull; [How it works](#how-it-works) &bull; [Install](#install) &bull; [Use](#use) &bull; [Known limits](#known-limits)
 
-## 📑 สารบัญ (Table of Contents)
-
-1. [ภาพรวมโครงการ (Project Overview)](#-ภาพรวมโครงการ-project-overview)
-2. [สถาปัตยกรรมระบบ (System Architecture)](#-สถาปัตยกรรมระบบ-system-architecture)
-3. [ทฤษฎีทางคณิตศาสตร์และวิทยาการคอมพิวเตอร์](#-ทฤษฎีทางคณิตศาสตร์และวิทยาการคอมพิวเตอร์)
-   - [ทฤษฎี Shannon Entropy](#1-ทฤษฎี-shannon-entropy-ความสับสนสถิติของข้อมูล)
-   - [ทฤษฎี Modulo 11 Checksum (Thai National ID)](#2-ทฤษฎี-modulo-11-checksum-เลขบัตรประชาชนไทย-13-หลัก)
-4. [วิศวกรรมระดับ Low-Level OS: Direct Terminal I/O](#-วิศวกรรมระดับ-low-level-os-direct-terminal-io)
-5. [การติดตั้งและคำสั่งใช้งาน (Installation & Usage)](#-การติดตั้งและคำสั่งใช้งาน-installation--usage)
-6. [โครงสร้างโปรเจกต์ (Project Structure)](#-โครงสร้างโปรเจกต์-project-structure)
-7. [การทดสอบ Unit Tests](#-การทดสอบ-unit-tests)
+</div>
 
 ---
 
-## 🎯 ภาพรวมโครงการ (Project Overview)
+## What is this?
 
-ปัญหาข้อมูลความลับรั่วไหล (Credential Leakage) สู่ Public/Private Git Repositories มักเกิดจากความเผลอเรอของนักพัฒนาที่ Hardcode API Keys หรือข้อมูลทดสอบ (PII) ลงในโค้ด
+Sometimes a developer types an API key or a real ID number into code "just to test", then forgets it and commits. If the repository is public, the secret is public too.
 
-**CommitGuard** ยึดหลักการความปลอดภัยแบบ **Shift-Left Security** โดยเข้าแทรกแซงในจังหวะ Pre-commit ของ Git เพื่อ:
-- ตรวจจับเฉพาะบรรทัดที่มีการเปลี่ยนแปลงจริงใน Staging Area (`git diff --cached`)
-- สกัดจับ PII ตามบริบทประเทศไทย (เลขบัตรประชาชน 13 หลัก, เบอร์โทรศัพท์มือถือ)
-- ค้นหาลายเซ็น API ยอดนิยม (AWS, OpenAI, GitHub PAT, Private Keys)
-- วิเคราะห์ความสุ่มของสตริงด้วย Shannon Entropy เพื่อตรวจจับคีย์หรือโทเค็นที่ไม่ตรงกับ Regex รูปแบบเดิม
-- เปิดโอกาสให้นักพัฒนาตัดสินใจแก้ไข (`[A] Abort`) หรือข้ามการตรวจสอบ (`[B] Bypass`) ได้สดๆ บน Terminal
+CommitGuard is a **pre-commit hook**. A hook is a small program that Git runs automatically at a certain moment. A *pre-commit* hook runs just before a commit is created. CommitGuard uses this moment to scan your staged changes. (Staged means: files you added with `git add`.)
 
+- It reads **only the lines you added**, not your whole project.
+- It uses **only the Python standard library**. You do not need `pip install`.
+- If it finds something, it shows a table and asks you: stop the commit, or continue.
+
+**Tested on:** Windows, Python 3.14.
+**UNVERIFIED:** Linux, macOS, and Python 3.8 to 3.13. I have not run CommitGuard there.
+
+## What it finds
+
+| What | Example | How it is found |
+|------|---------|-----------------|
+| Thai national ID | `1-1001-00123-45-4` | 13 digits, and the check digit must be correct (Modulo 11) |
+| Thai mobile phone | `081-234-5678` | Starts with 06, 08 or 09 |
+| Private key header | `-----BEGIN RSA PRIVATE KEY-----` | Pattern match |
+| AWS access key | `AKIA...` | Pattern match |
+| OpenAI-style key | `sk-...` | Pattern match |
+| GitHub token | `ghp_...` | Pattern match |
+| Random-looking strings | `wJalrXUtnFEMI/K7...` | Shannon entropy (see below) |
+
+## How it works
 ---
-
-## 🏗️ สถาปัตยกรรมระบบ (System Architecture)
-
-CommitGuard แบ่งออกเป็นโมดูลที่ทำงานสอดประสานกันเป็น Pipeline ดังนี้:
 
 ```mermaid
 flowchart TD
-    A["git commit"] --> B["Git Hook (.git/hooks/pre-commit)"]
+    A["You run git commit"] --> B["Git runs the hook<br/>.git/hooks/pre-commit"]
     B --> C["commitguard.py"]
-    C --> D["src/scanner.py<br/>git diff --cached --no-color"]
-    D --> E["Parse Hunk Headers<br/>@@ -old,len +new,len @@"]
-    E --> F["Extract Added Lines (+)"]
-    
-    subgraph Detectors ["Detection Engine"]
-        F --> G["src/validators.py<br/>Thai National ID (Modulo 11)"]
-        F --> H["src/validators.py<br/>Thai Phone (06/08/09)"]
-        F --> I["src/validators.py<br/>Known API Patterns & Private Keys"]
-        F --> J["src/entropy.py<br/>Shannon Entropy H(X) >= 4.3"]
-    end
-    
-    G --> K["Collect Findings<br/>(file, line, type, snippet, score)"]
-    H --> K
-    I --> K
-    J --> K
-    
-    K --> L{"Any Findings?"}
-    L -- "No (Clean)" --> M["Display [CLEAN] (Green)<br/>sys.exit(0) -> Commit Proceeds"]
-    L -- "Yes (Alert)" --> N["Display [SECURITY ALERT] Table<br/>src/cli.py"]
-    
-    N --> O["Low-Level Direct Terminal I/O<br/>(CONIN$ on Windows / /dev/tty on Unix)"]
-    O --> P{"Developer Choice"}
-    P -- "[A] Abort" --> Q["sys.exit(1)<br/>Commit Blocked 🛑"]
-    P -- "[B] Bypass" --> R["sys.exit(0)<br/>Commit Bypassed ⚠️"]
+    C --> D["scanner.py<br/>runs git diff --cached"]
+    D --> E["Keep only the added lines (+)"]
+    E --> F["validators.py<br/>Thai ID, phone, private key, API keys"]
+    E --> G["entropy.py<br/>random-looking strings"]
+    F --> H{"Found anything?"}
+    G --> H
+    H -- "No" --> I["Print CLEAN<br/>exit code 0, commit continues"]
+    H -- "Yes" --> J["cli.py shows the alert table"]
+    J --> K["Ask: Abort or Bypass?"]
+    K -- "A" --> L["exit code 1<br/>commit is blocked"]
+    K -- "B" --> M["exit code 0<br/>commit continues"]
 ```
 
----
+Git decides what to do from the **exit code** of the hook. Code `0` means "OK, continue". Any other code means "stop the commit".
 
-## 🧮 ทฤษฎีทางคณิตศาสตร์และวิทยาการคอมพิวเตอร์
+### Why the prompt reads from the terminal directly
 
-### 1. ทฤษฎี Shannon Entropy (ความสับสน/สถิติของข้อมูล)
+A hook cannot always count on normal keyboard input (`sys.stdin`). So CommitGuard opens the terminal itself: `/dev/tty` on Linux and macOS, `CONIN$` on Windows. If it cannot open a terminal (for example, on a server with nobody there), it aborts the commit. This is a **fail-safe**: when in doubt, block.
 
-พัฒนาโดย **Claude E. Shannon** ในปี 1948 (*A Mathematical Theory of Communication*) เพื่อวัดปริมาณความไม่แน่นอน (Uncertainty) หรือข้อมูลเฉลี่ยที่บรรจุอยู่ในตัวแปรสุ่ม มีสูตรทางคณิตศาสตร์คือ:
+**UNVERIFIED:** the `CONIN$` behavior on Windows and the "no terminal" case in a real CI system. The code is written for them, but I have not tested them.
 
-$$H(X) = -\sum_{i=1}^{n} P(x_i) \log_2 P(x_i)$$
+<details>
+<summary><b>The ideas behind it: Shannon entropy</b></summary>
 
-โดยที่:
-- $n$: จำนวนตัวอักษรที่ไม่ซ้ำกันในสตริง (Distinct Characters)
-- $P(x_i)$: ความถี่สัมพัทธ์ (Probability) ของตัวอักษร $x_i$ ในสตริง
-- $\log_2$: ลอการิทึมฐานสอง ทำให้ผลลัพธ์มีหน่วยเป็น **bits per character**
+<br>
 
-#### การประยุกต์ใช้ในการตรวจจับกุญแจความลับ (Secrets Detection)
-- **ข้อความภาษาอังกฤษทั่วไป / โค้ดโปรแกรม:** ตัวอักษรจะมีความถี่กระจุกตัวตามไวยากรณ์ (เช่น ตัวอักษร `e`, `t`, `a` พบบ่อยมาก) ส่งผลให้ค่า Entropy ต่ำ อยู่ที่ประมาณ **$2.0 - 3.5$ bits/char**
-- **Cryptographic Keys / API Tokens:** ผลิตจาก Random Number Generator ทำให้การกระจายตัวของตัวอักษรมีความสุ่มสูงมาก (High Entropy) เช่น Base64 หรือ Hex strings ขนาดยาว จะมีค่า Entropy สูงถึง **$4.3 - 5.5+$ bits/char**
+**Entropy** measures how mixed and unpredictable the characters in a string are. The formula (Claude Shannon, 1948):
 
-#### กลยุทธ์การลด False Positive ใน CommitGuard:
-1. **Length Filtering:** กรองเฉพาะ Token ที่มีความยาว $\ge 16$ ตัวอักษร (คำสั้นๆ แม้จะกระจายตัวสม่ำเสมอก็จะไม่ถูกตีความเป็น Secret)
-2. **Threshold Tuning:** กำหนดจุดตัดค่าเอนโทรปีมาตรฐานที่ **$4.3$ bits/char**
-
----
-
-### 2. ทฤษฎี Modulo 11 Checksum (เลขบัตรประชาชนไทย 13 หลัก)
-
-เลขประจำตัวประชาชนไทย 13 หลักตามมาตรฐานกระทรวงมหาดไทย ประกอบด้วยเลข 13 หลัก ($d_1 d_2 d_3 \dots d_{12} d_{13}$) โดยหลักสุดท้าย ($d_{13}$) คือ **Check Digit** ที่คำนวณผ่านขั้นตอนวิธี **Modulo 11**:
-
-#### ขั้นตอนวิธีคำนวณ:
-1. นำเลข 12 หลักแรกแต่ละหลักมาคูณกับค่าถ่วงน้ำหนัก (Weight) เริ่มต้นจาก 13 ลดหลั่นลงไปจนถึง 2:
-   $$\text{Sum} = \sum_{i=0}^{11} d_i \times (13 - i) = (d_0 \times 13) + (d_1 \times 12) + \dots + (d_{11} \times 2)$$
-2. คำนวณหาเศษเหลือจากการหารด้วย 11:
-   $$R = \text{Sum} \pmod{11}$$
-3. คำนวณหา Check Digit ด้วยการลบเศษออกจาก 11 แล้วนำไป Modulo ด้วย 10:
-   $$\text{Check Digit} = (11 - R) \pmod{10}$$
-4. ตรวจสอบความถูกต้อง: ค่าที่คำนวณได้ต้องเท่ากับตัวเลขในหลักที่ 13 ($d_{12}$) พอดี
-5. **Identical Digits Check:** กรองกรณีเลขที่ซ้ำกันทั้งหมด 13 หลัก (เช่น `1111111111111`) ซึ่งแม้จะตรงตามสูตรคำนวณแต่ไม่ใช่เลขจริง
-
----
-
-## 💻 วิศวกรรมระดับ Low-Level OS: Direct Terminal I/O
-
-### ปัญหาของ Git Hook ในระบบปฏิบัติการ
-เมื่อ Git เรียกใช้งาน Pre-commit Hook (เช่น ผ่าน `git commit`) Git จะทำการ Redirect สตรีมอินพุตมาตรฐาน (`sys.stdin`) เพื่อส่งข้อมูลหรือป้องกันไม่ให้ Hook ไปรบกวนกระบวนการ commit ส่งผลให้คำสั่งอ่านค่าจากแป้นพิมพ์ทั่วไป เช่น `input()` ในภาษา Python เกิดข้อผิดพลาด `EOFError: EOF when reading a line` หรือทำงานไม่ถูกต้อง
-
-### วิธีการแก้ไขใน CommitGuard
-CommitGuard ทำการข้าม `sys.stdin` และเชื่อมต่อไปยังตัวควบคุมอุปกรณ์ Terminal ประจำโพรเซสโดยตรง (Controlling Terminal Device):
-- **Windows:** เปิดสตรีมเชื่อมต่อตรงไปยังไดรเวอร์คอนโซล `CONIN$`
-- **Linux / macOS:** เปิดสตรีมเชื่อมต่อตรงไปยังอุปกรณ์ `/dev/tty`
-
-```python
-tty_path = 'CONIN$' if os.name == 'nt' else '/dev/tty'
-with open(tty_path, 'r', encoding='utf-8') as tty:
-    choice = tty.readline().strip().upper()
+```
+H = -sum( p(x) * log2(p(x)) )     p(x) = how often character x appears
 ```
 
-> **Fail-Safe Mechanism:** ในกรณีที่ระบบทำงานบน CI/CD Pipeline (Non-interactive mode) ที่ไม่มี Terminal Controller ระบบจะส่งสัญญาณ `sys.exit(1)` ทันที เพื่อป้องกันไม่ให้ความลับหลุดรอดออกไป
+The result is in *bits per character*. Three small examples:
 
+| String | Entropy | Why |
+|--------|---------|-----|
+| `aaaaaaa` | 0.0 | Always the same character |
+| `abababab` | 1.0 | Two characters, equal share |
+| `abcdefghijklmnop` | 4.0 | 16 different characters, each once |
+
+A real secret key is usually random, so its characters are very mixed and its entropy is high. Normal code repeats letters a lot, so its entropy is lower.
+
+CommitGuard flags a string when **both** are true:
+1. It is at least **16 characters** long.
+2. Its entropy is at least **4.3**.
+
+**Two facts about the limits** (these come from the math, not from guessing):
+- A string with `n` characters can never have more than `log2(n)` bits. So a 16-character string tops out at 4.0 and can **never** reach 4.3. You need at least 20 characters.
+- A hex string (`0-9a-f`) has only 16 different symbols, so its maximum is `log2(16) = 4.0`. A random hex secret can **never** be caught by entropy alone. Base64 has 64 symbols, so its maximum is 6.
+
+Entropy cannot tell a secret from a file path. It only sees "mixed characters". See [Known limits](#known-limits) for a real example.
+
+</details>
+
+<details>
+<summary><b>The ideas behind it: Thai national ID and Modulo 11</b></summary>
+
+<br>
+
+A Thai national ID has 13 digits. The last digit is a **check digit**. It is calculated from the first 12 digits, so it can catch typing mistakes. CommitGuard uses the same calculation to tell a real-looking ID from a random 13-digit number.
+
+Steps (using `1234567890121` as the example):
+
+1. Multiply the first 12 digits by the weights 13, 12, 11, ... 2.
+   `1×13 + 2×12 + 3×11 + 4×10 + 5×9 + 6×8 + 7×7 + 8×6 + 9×5 + 0×4 + 1×3 + 2×2 = 352`
+2. Take the remainder of the sum divided by 11: `352 mod 11 = 0`.
+3. Check digit = `(11 − remainder) mod 10` = `(11 − 0) mod 10 = 1`.
+4. The 13th digit is `1`. It matches, so the ID is valid.
+
+The weights are different for each position, so swapping two digits changes the sum, and the mistake is caught. IDs where all 13 digits are the same (like `1111111111111`) are rejected.
+
+This only checks the math. It cannot know if the person really exists. By chance, about 1 in 10 random 13-digit numbers also passes.
+
+</details>
+
+## Install
 ---
 
-## 🚀 การติดตั้งและคำสั่งใช้งาน (Installation & Usage)
+You install CommitGuard **into the repository you want to protect**. Run the installer while your terminal is inside that repository.
 
-### 1. ติดตั้งแบบคำสั่งเดียว (One-Command Install)
+**Windows**
 
-#### สำหรับ Windows:
-ดับเบิลคลิกไฟล์ `install.bat` หรือรันผ่าน Command Prompt:
-```cmd
-install.bat
+```powershell
+cd path\to\your\project
+path\to\CommitGuard\install.bat
 ```
 
-#### สำหรับ Linux / macOS:
+**Linux / macOS** (UNVERIFIED: I wrote `install.sh` but I have not run it)
+
 ```bash
-chmod +x install.sh
-./install.sh
+cd path/to/your/project
+chmod +x path/to/CommitGuard/install.sh
+path/to/CommitGuard/install.sh
 ```
 
-#### ผ่าน Python CLI โดยตรง:
-```bash
-python commitguard.py --install
+**Or directly with Python**
+
+```powershell
+cd path\to\your\project
+python path\to\CommitGuard\commitguard.py --install
 ```
-คำสั่งจะสร้างไฟล์ `.git/hooks/pre-commit` และตั้งสิทธิ์ `chmod +x` (0755) ให้อัตโนมัติ
 
+What the installer does:
+- It writes the file `.git/hooks/pre-commit` in your project.
+- That file contains the **full path** to `commitguard.py`. So do not move or delete the CommitGuard folder after you install.
+- It adds a marker comment `# CommitGuard-Hook` to the file. If you already have a pre-commit hook that CommitGuard did not write, `--install` and `--uninstall` refuse to touch it.
+
+## Use
 ---
 
-### 2. คำสั่ง CLI ทั้งหมด
+After you install, use Git as usual:
 
-| คำสั่ง | คำอธิบาย |
-| :--- | :--- |
-| `python commitguard.py --install` | ติดตั้ง CommitGuard ลงใน `.git/hooks/pre-commit` ของ Repository ปัจจุบัน |
-| `python commitguard.py --scan` | สแกนไฟล์ที่ถูก Stage (`git add`) ทันทีโดยไม่ต้องสั่ง Commit |
-| `python commitguard.py --uninstall` | ถอนการติดตั้ง CommitGuard ออกจาก Git Hook |
-| `python commitguard.py --help` | แสดงคู่มือและคำอธิบายคำสั่งช่วยเหลือ |
+```powershell
+git add .
+git commit -m 'my message'
+```
 
+If everything is fine, you see `[CLEAN]` and the commit goes on. If CommitGuard finds something, you see a table like this (example, not real data):
+
+```
+ [SECURITY ALERT]  Detected 1 potential secret(s) / PII in staged changes!
+
+------------------------------------------------------------------------------------
+FILE                     LINE   CATEGORY   TYPE                       SCORE    SNIPPET
+------------------------------------------------------------------------------------
+config.py                12     SECRET     AWS Access Key             3.68     AK...LE
+------------------------------------------------------------------------------------
+
+[CommitGuard Action Required]
+  [A] Abort commit (Fix your secrets)
+  [B] Bypass and proceed anyway
+Select action [A/B]:
+```
+
+- The **snippet is masked**. Like a bank app that shows `**** 1234`, it shows only about 20% of the characters, so the secret is not printed in full in your terminal.
+- Type `A` and Enter to stop the commit. Remove the secret, then commit again.
+- Type `B` and Enter if you checked and it is a false alarm.
+- If you press Ctrl-D (end of input), CommitGuard treats it as `A`.
+
+### Commands
 ---
 
-## 📁 โครงสร้างโปรเจกต์ (Project Structure)
+| Command | What it does |
+|---------|--------------|
+| `python commitguard.py --install` | Installs the hook in the current repository |
+| `python commitguard.py --scan` | Scans the staged changes now, without committing |
+| `python commitguard.py --uninstall` | Removes the hook (only if CommitGuard wrote it) |
+| `python commitguard.py --help` | Shows help |
+
+## Project structure
+---
 
 ```text
 CommitGuard/
-├── commitguard.py         # Entrypoint หลักของโปรแกรมและ Argument Dispatcher
-├── install.sh             # สคริปต์ติดตั้งอัตโนมัติสำหรับ Linux และ macOS
-├── install.bat            # สคริปต์ติดตั้งอัตโนมัติสำหรับ Windows
+├── commitguard.py      # Entry point: reads the command and calls the right function
+├── install.sh          # Installer for Linux and macOS (UNVERIFIED)
+├── install.bat         # Installer for Windows
 ├── src/
-│   ├── __init__.py        # แพ็กเกจโมดูล
-│   ├── entropy.py         # ฟังก์ชัน Shannon Entropy H(X) และ High-Entropy Detector
-│   ├── validators.py      # Modulo 11 Thai ID และ Regex Scanners (Phone, API Keys, Pem)
-│   ├── scanner.py         # Hunk Diff Parser และตัวแยก Added Lines จาก git diff --cached
-│   └── cli.py             # จัดการ ANSI Display, Direct Terminal I/O, และ Hook Installer
+│   ├── entropy.py      # Shannon entropy and the high-entropy check
+│   ├── validators.py   # Thai ID (Modulo 11), phone, private key, API key patterns
+│   ├── scanner.py      # Runs git diff --cached and finds the added lines
+│   └── cli.py          # Output, the A/B prompt, install and uninstall
 ├── tests/
-│   ├── __init__.py
-│   ├── test_core.py       # Unit Tests สำหรับ Entropy & Validators (16 Tests)
-│   └── test_scanner.py    # Unit Tests สำหรับ Diff Parser, CLI & Mock Workflows (8 Tests)
-└── README.md              # เอกสารและคู่มือการใช้งานโครงการ
+│   ├── test_core.py    # Tests for entropy and validators (16 tests)
+│   └── test_scanner.py # Tests for the diff parser and the CLI (15 tests)
+├── NOTES.md            # What I learned from each bug
+└── ROADMAP.md          # Bug list and plan
 ```
 
+## Tests
 ---
 
-## 🧪 การทดสอบ Unit Tests
-
-ชุดทดสอบทั้งหมดทำงานผ่านโมดูล `unittest` ใน Python Standard Library:
-
-```bash
+```powershell
+cd path\to\CommitGuard
 python -m unittest discover -s tests -v
 ```
 
-### สรุปผลการทดสอบ (24 Tests Passed):
-- ✅ **Shannon Entropy:** Empty string, Single char, Uniform distribution, Random keys
-- ✅ **Thai ID Modulo 11:** Valid IDs, Formatted with hyphens, Invalid checksum, Identical digits
-- ✅ **Regex Scanners:** Thai phones (06x, 08x, 09x), Private keys (RSA/EC/SSH), AWS Keys, OpenAI Keys, GitHub PATs
-- ✅ **Diff Parser:** Hunk parsing, Line number tracking, Additions isolation, Clean diffs
-- ✅ **CLI Workflows:** Snippet masking, Abort [A] exit code 1, Bypass [B] exit code 0, Clean diff exit code 0
+There are **31 tests**. They cover entropy, the Thai ID check, the phone / key / token patterns, the diff parser, masking, the A and B choices, and the install / uninstall rules (including "do not touch a hook that is not ours").
+
+## Known limits
+---
+
+CommitGuard is not finished. This list is honest. I am fixing these one by one (see [ROADMAP.md](ROADMAP.md)).
+
+**It can miss real secrets** (false negatives)
+- Random hex secrets are never caught by entropy (maximum is 4.0, the threshold is 4.3).
+- Short random keys are often missed. In my tests with random base64 at threshold 4.3, 16 characters were never caught, 24 characters about 44% of the time, and 32 characters about 97%.
+- Only 3 API key patterns exist today. An `sk-ant-` key is labelled "OpenAI".
+- An added line that starts with `++` can be dropped by the diff parser, and the line numbers after it can shift.
+- Thai or non-ASCII file names: Git puts quotes around the path, so the file name may be wrong.
+- Thai ID and phone patterns can fail when the number touches a Thai letter or underscore, and `+66` or `081 234 5678` are not matched.
+- `git commit --no-verify` skips every hook, including this one. CommitGuard cannot stop that.
+- If you set `core.hooksPath`, `--install` still writes to `.git/hooks`.
+
+**It can warn when nothing is wrong** (false positives)
+- It flags its own code. Example: the path `SCRIPT_DIR/commitguard.py` has entropy 4.40, so it was reported as a secret.
+- Package lock hashes, public certificate lines, and a CSS class like `sk-circle-fade-...` can be flagged.
+- About 1 in 10 random 13-digit numbers (for example, a timestamp in milliseconds) passes the Thai ID check.
+- One private key can produce many findings (one per line).
+- Phone numbers are noisy. Plan: a phone number alone will only **warn** and will not block the commit. **Not done yet:** today a phone number shows the same A/B prompt.
+
+**Not tested yet (UNVERIFIED)**
+- Linux and macOS (including `install.sh`)
+- Python versions other than 3.14
+- Folder paths that contain spaces
+- The Windows `python3` Store shortcut
+- `CONIN$` on Windows, and a real CI system without a terminal
+
+---
+
+*Last updated: 15 Oct 2026.*
